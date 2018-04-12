@@ -123,7 +123,7 @@ macro_rules! from_wdl_impl {
 
 from_wdl_impl! { i8 i16 i32 i64 isize }
 
-/// Distance to zeroing.
+/// Distance to zeroing of the half-move clock.
 ///
 /// Can be off by one: `Dtz(-n)` can mean a loss in `n + 1` plies and `Dtz(n)`
 /// can mean a win in `n + 1` plies. This is guaranteed not to happen for
