@@ -33,17 +33,17 @@
 //!
 //! # fn try_main() -> Result<(), Error> {
 //! let mut tables = Tablebases::new();
-//! tables.add_directory("/opt/syzygy/regular/syzygy")?;
+//! tables.add_directory("tables/chess")?;
 //!
-//! let pos: Chess = "8/8/8/8/1p2P3/4P3/1k6/3K4 w - - 0 1"
+//! let pos: Chess = "8/8/8/8/B7/N7/K2k4/8 b - - 0 1"
 //!     .parse::<Fen>()?
 //!     .position()?;
 //!
 //! let wdl = tables.probe_wdl(&pos)?;
-//! assert_eq!(wdl, Wdl::CursedWin);
+//! assert_eq!(wdl, Wdl::Loss);
 //!
 //! let dtz = tables.probe_dtz(&pos)?;
-//! assert_eq!(dtz, Dtz(101));
+//! assert_eq!(dtz, Dtz(-59));
 //!
 //! #     Ok(())
 //! # }
