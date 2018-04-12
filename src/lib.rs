@@ -33,7 +33,7 @@
 //!
 //! # fn try_main() -> Result<(), Error> {
 //! let mut tables = Tablebases::new();
-//! tables.add_directory("tables/chess")?;
+//! tables.add_directory("tables/regular")?;
 //!
 //! let pos: Chess = "8/8/8/8/B7/N7/K2k4/8 b - - 0 1"
 //!     .parse::<Fen>()?
