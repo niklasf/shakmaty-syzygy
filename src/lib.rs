@@ -81,9 +81,6 @@ extern crate double_checked_cell;
 extern crate static_assertions;
 #[cfg(feature="serde-1")]
 extern crate serde;
-#[cfg(feature="serde-1")]
-#[macro_use]
-extern crate serde_derive;
 
 mod material;
 mod types;
