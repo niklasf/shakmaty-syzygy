@@ -37,6 +37,9 @@ Documentation
 
 Changelog
 
+* 0.1.1
+  - Optional `serde-1` feature.
+  - Add `Dtz.add_plies()`.
 * 0.1.0
   - First release.
 
