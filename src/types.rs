@@ -20,6 +20,9 @@ use std::io;
 
 use arrayvec::ArrayVec;
 
+#[cfg(feature="serde-1")]
+use serde::{Serialize, Deserialize, Serializer, Deserializer};
+
 use shakmaty::{Color, Piece, Outcome, Chess};
 
 use material::Material;
@@ -228,6 +231,40 @@ impl SubAssign for Dtz {
     #[inline]
     fn sub_assign(&mut self, other: Dtz) {
         self.0 -= other.0;
+    }
+}
+
+#[cfg(feature="serde-1")]
+impl Serialize for Dtz {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_i16(self.0)
+    }
+}
+
+#[cfg(feature="serde-1")]
+impl<'de> Deserialize<'de> for Dtz {
+    fn deserialize<D>(deserializer: D) -> Result<Dtz, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct DtzVisitor;
+
+        impl<'de> Visitor<'de> for DtzVisitor {
+            type Value = Dtz;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a signed 16 bit integer dtz")
+            }
+
+            fn visit_i8<E: de::Error>(self, value: i8) -> Result<Dtz, E> {
+                Ok(Dtz::from(value))
+            }
+        }
+
+        deserializer.deserialize_i16(DtzVisitor)
     }
 }
 

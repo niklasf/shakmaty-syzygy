@@ -79,6 +79,8 @@ extern crate fnv;
 extern crate double_checked_cell;
 #[macro_use]
 extern crate static_assertions;
+#[cfg(feature="serde-1")]
+extern crate serde;
 
 mod material;
 mod types;
