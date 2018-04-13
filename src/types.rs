@@ -205,7 +205,7 @@ impl Dtz {
     }
 
     pub fn add_plies(&self, plies: i16) -> Dtz {
-        Dtz(self.0.signum() * (self.abs() + plies))
+        Dtz(self.0.signum() * (self.0.abs() + plies))
     }
 }
 
