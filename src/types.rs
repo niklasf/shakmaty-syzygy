@@ -203,6 +203,10 @@ impl Dtz {
             Wdl::Win => Dtz(1),
         }
     }
+
+    pub fn add_plies(&self, plies: i16) -> Dtz {
+        Dtz(self.0.signum() * (self.abs() + plies))
+    }
 }
 
 macro_rules! from_dtz_impl {
