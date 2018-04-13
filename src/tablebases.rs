@@ -418,8 +418,12 @@ impl<S: Position + Clone + Syzygy> Tablebases<S> {
 
                 let v = -self.probe_dtz(&after)?;
 
-                if v > Dtz(0) {
-                    best = min(v + Dtz(1), best);
+                if v > Dtz(0) && v + Dtz(1) < best {
+                    best = if v == Dtz(1) && after.is_checkmate() {
+                        Dtz(1)
+                    } else {
+                        v + Dtz(1)
+                    };
                 }
             }
 
