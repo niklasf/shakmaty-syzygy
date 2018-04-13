@@ -20,9 +20,6 @@ use std::io;
 
 use arrayvec::ArrayVec;
 
-#[cfg(feature="serde-1")]
-use serde::{Serialize, Deserialize, Serializer, Deserializer};
-
 use shakmaty::{Color, Piece, Outcome, Chess};
 
 use material::Material;
@@ -126,6 +123,58 @@ macro_rules! from_wdl_impl {
 
 from_wdl_impl! { i8 i16 i32 i64 isize }
 
+#[cfg(feature="serde-1")]
+impl ::serde::Serialize for Wdl {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: ::serde::Serializer
+    {
+        serializer.serialize_i8(i8::from(*self))
+    }
+}
+
+#[cfg(feature="serde-1")]
+impl<'de> ::serde::Deserialize<'de> for Wdl {
+    fn deserialize<D>(deserializer: D) -> Result<Wdl, D::Error>
+    where
+        D: ::serde::Deserializer<'de>
+    {
+        struct Visitor;
+
+        impl<'de> ::serde::de::Visitor<'de> for Visitor {
+            type Value = Wdl;
+
+            fn expecting(&self, formatter: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
+                formatter.write_str("wdl value (-2, -1, 0, 1, 2)")
+            }
+
+            fn visit_i64<E>(self, value: i64) -> Result<Wdl, E>
+            where
+                E: ::serde::de::Error,
+            {
+                if -2 <= value && value <= 2 {
+                    Ok(unsafe { ::std::mem::transmute(value as i8) })
+                } else {
+                    Err(E::custom(format!("wdl out of range: {}", value)))
+                }
+            }
+
+            fn visit_u64<E>(self, value: u64) -> Result<Wdl, E>
+            where
+                E: ::serde::de::Error,
+            {
+                if value <= 2 {
+                    Ok(unsafe { ::std::mem::transmute(value as i8) })
+                } else {
+                    Err(E::custom(format!("wdl out of range: {}", value)))
+                }
+            }
+        }
+
+        deserializer.deserialize_i8(Visitor)
+    }
+}
+
 /// Distance to zeroing of the half-move clock.
 ///
 /// Can be off by one: `Dtz(-n)` can mean a loss in `n + 1` plies and `Dtz(n)`
@@ -141,6 +190,7 @@ from_wdl_impl! { i8 i16 i32 i64 isize }
 /// | `100 < n` | Cursed win | Win, but draw under the 50-move rule. A zeroing move can be forced in `n` or `n - 100` plies (if a later phase is responsible for the curse). |
 /// | `1 <= n <= 100` | Win | Unconditional win (assuming the 50-move counter is zero). Zeroing move can be forced in `n` plies. |
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[cfg_attr(feature="serde-1", derive(Serialize, Deserialize))]
 pub struct Dtz(pub i16);
 
 impl Dtz {
@@ -231,40 +281,6 @@ impl SubAssign for Dtz {
     #[inline]
     fn sub_assign(&mut self, other: Dtz) {
         self.0 -= other.0;
-    }
-}
-
-#[cfg(feature="serde-1")]
-impl Serialize for Dtz {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_i16(self.0)
-    }
-}
-
-#[cfg(feature="serde-1")]
-impl<'de> Deserialize<'de> for Dtz {
-    fn deserialize<D>(deserializer: D) -> Result<Dtz, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        struct DtzVisitor;
-
-        impl<'de> Visitor<'de> for DtzVisitor {
-            type Value = Dtz;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("a signed 16 bit integer dtz")
-            }
-
-            fn visit_i8<E: de::Error>(self, value: i8) -> Result<Dtz, E> {
-                Ok(Dtz::from(value))
-            }
-        }
-
-        deserializer.deserialize_i16(DtzVisitor)
     }
 }
 

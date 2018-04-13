@@ -59,8 +59,8 @@
 
 #![warn(missing_debug_implementations)]
 
-#![cfg_attr(feature = "cargo-clippy", allow(needless_range_loop))]
-#![cfg_attr(feature = "cargo-clippy", allow(cyclomatic_complexity))]
+#![cfg_attr(feature="cargo-clippy", allow(needless_range_loop))]
+#![cfg_attr(feature="cargo-clippy", allow(cyclomatic_complexity))]
 
 extern crate arrayvec;
 #[macro_use]
@@ -81,6 +81,9 @@ extern crate double_checked_cell;
 extern crate static_assertions;
 #[cfg(feature="serde-1")]
 extern crate serde;
+#[cfg(feature="serde-1")]
+#[macro_use]
+extern crate serde_derive;
 
 mod material;
 mod types;
