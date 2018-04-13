@@ -37,11 +37,19 @@ Documentation
 
 Changelog
 
+* 0.1.2
+  - Cosmetic tweak to DTZ in case of mate in 1.
 * 0.1.1
   - Optional `serde-1` feature.
   - Add `Dtz.add_plies()`.
 * 0.1.0
   - First release.
+
+Acknowledgement
+---------------
+
+Thanks to Ronald de Man for his [Syzygy tablebases](https://github.com/syzygy1/tb).
+The probing code is closely based on his implementation for Stockfish.
 
 License
 -------
