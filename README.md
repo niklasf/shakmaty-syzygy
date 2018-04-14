@@ -36,6 +36,7 @@ Documentation
 [Read the documentation](https://docs.rs/shakmaty-syzygy)
 
 Changelog
+---------
 
 * 0.1.2
   - Cosmetic tweak to DTZ in case of mate in 1.
