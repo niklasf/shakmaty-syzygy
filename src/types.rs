@@ -20,7 +20,8 @@ use std::io;
 
 use arrayvec::ArrayVec;
 
-use shakmaty::{Color, Piece, Outcome, Chess};
+use shakmaty::{Color, Piece, Outcome};
+use shakmaty::variants::{Chess, Atomic};
 
 use material::Material;
 
@@ -66,6 +67,22 @@ impl Syzygy for Chess {
 
     const ONE_KING: bool = true;
     const CONNECTED_KINGS: bool = false;
+    const CAPTURES_COMPULSORY: bool = false;
+}
+
+impl Syzygy for Atomic {
+    const TBW_EXTENSION: &'static str = "atbw";
+    const TBZ_EXTENSION: &'static str = "atbz";
+    const PAWNLESS_TBW_EXTENSION: &'static str = "atbw";
+    const PAWNLESS_TBZ_EXTENSION: &'static str = "atbz";
+
+    const WDL_MAGIC: [u8; 4] = [0x55, 0x8d, 0xa4, 0x49];
+    const DTZ_MAGIC: [u8; 4] = [0x91, 0xa9, 0x5e, 0xeb];
+    const PAWNLESS_WDL_MAGIC: [u8; 4] = [0x55, 0x8d, 0xa4, 0x49];
+    const PAWNLESS_DTZ_MAGIC: [u8; 4] = [0x91, 0xa9, 0x5e, 0xeb];
+
+    const ONE_KING: bool = true;
+    const CONNECTED_KINGS: bool = true;
     const CAPTURES_COMPULSORY: bool = false;
 }
 
