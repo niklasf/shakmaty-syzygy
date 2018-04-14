@@ -1,2 +1,0 @@
-*.rtbw filter=lfs diff=lfs merge=lfs -text
-*.rtbz filter=lfs diff=lfs merge=lfs -text

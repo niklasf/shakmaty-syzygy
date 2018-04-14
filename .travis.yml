@@ -3,3 +3,6 @@ sudo: false
 
 rust:
  - nightly
+
+before_install:
+ - ./download-test-assets.sh
