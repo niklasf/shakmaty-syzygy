@@ -9,6 +9,7 @@ license = "GPL-3.0+"
 authors = ["Niklas Fiekas <niklas.fiekas@backscattering.de>"]
 categories = ["games"]
 keywords = ["chess", "syzygy", "tablebase"]
+exclude = ["tables/**/*.*tb*"]
 
 [dependencies]
 arrayvec = "0.4"
