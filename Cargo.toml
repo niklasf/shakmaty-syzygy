@@ -16,7 +16,7 @@ name = "benches"
 harness = false
 
 [dependencies]
-arrayvec = "0.5"
+arrayvec = "0.6"
 bitflags = "1.2"
 shakmaty = "0.18"
 num-integer = "0.1"
