@@ -18,7 +18,7 @@ harness = false
 [dependencies]
 arrayvec = "0.5"
 bitflags = "1.2"
-shakmaty = "0.18"
+shakmaty = "0.19"
 num-integer = "0.1"
 byteorder = "1.3"
 itertools = "0.10"
