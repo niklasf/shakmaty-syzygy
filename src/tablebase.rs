@@ -177,6 +177,26 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
         self.probe(pos).map(|entry| entry.wdl())
     }
 
+    /// Fetches the [`Wdl`] for a position.
+    ///
+    /// This performs a simple lookup from the tables, as opposed to
+    /// [`probe_wdl`] which will do some extra searching of a position.
+    ///
+    /// # Errors
+    ///
+    /// See [`SyzygyError`] for possible error
+    /// condiitions.
+    pub fn get_wdl(&self, pos: &S) -> SyzygyResult<Wdl> {
+        if pos.board().occupied().count() > S::MAX_PIECES {
+            return Err(SyzygyError::TooManyPieces);
+        }
+        if pos.castles().any() {
+            return Err(SyzygyError::Castling);
+        }
+
+        self.probe_wdl_table(pos)
+    }
+
     /// Probe tables for the [`Dtz`] value of a position.
     ///
     /// Min-maxing the DTZ of the available moves guarantees achieving the
