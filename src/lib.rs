@@ -43,6 +43,7 @@
 #[macro_use]
 mod errors;
 mod material;
+mod meta;
 mod table;
 mod tablebase;
 mod types;

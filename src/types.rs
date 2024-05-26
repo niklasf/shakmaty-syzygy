@@ -1,6 +1,7 @@
 use std::{fmt, ops::Neg};
 
 use arrayvec::ArrayVec;
+use serde::Serialize;
 use shakmaty::{Chess, Color, Outcome, Piece};
 
 /// File extension and magic header bytes of Syzygy tables.
@@ -633,7 +634,8 @@ pub const MAX_PIECES: usize = 7;
 pub type Pieces = ArrayVec<Piece, MAX_PIECES>;
 
 /// Metric stored in a table: WDL or DTZ.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Metric {
     /// WDL<sub>50</sub>.
     Wdl,

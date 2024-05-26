@@ -10,6 +10,9 @@ use tracing::{trace, trace_span};
 use crate::{
     errors::{ProbeError, ProbeResult},
     material::Material,
+    meta::{
+        BlockLengthsInfo, BlocksInfo, FileInfo, FlagsInfo, SideInfo, SparseIndexInfo, TableInfo,
+    },
     types::{DecisiveWdl, MaybeRounded, Metric, Pieces, Syzygy, Wdl, MAX_PIECES},
 };
 
@@ -64,7 +67,7 @@ bitflags! {
     #[derive(Debug)]
     struct Flag: u8 {
         /// DTZ table stores black to move.
-        const STM = 1;
+        const BLACK_TO_MOVE = 1;
         /// Use `DtzMap`.
         const MAPPED = 2;
         /// DTZ table has winning positions on the edge of the 50-move rule and
@@ -578,10 +581,7 @@ struct Symbol {
 
 impl Symbol {
     fn new() -> Symbol {
-        Symbol {
-            lr: [0; 3],
-            len: 0,
-        }
+        Symbol { lr: [0; 3], len: 0 }
     }
 
     fn left(&self) -> u16 {
@@ -779,9 +779,9 @@ fn read_symbols<F: ReadAt>(
         read_symbols(raf, btree, symbols, visited, symbol.left(), depth)?;
         read_symbols(raf, btree, symbols, visited, symbol.right(), depth)?;
 
-        symbol.len = u!(u!(
-            symbols[usize::from(symbol.left())].len.checked_add(symbols[usize::from(symbol.right())].len)
-        )
+        symbol.len = u!(u!(symbols[usize::from(symbol.left())]
+            .len
+            .checked_add(symbols[usize::from(symbol.right())].len))
         .checked_add(1));
     }
 
@@ -804,6 +804,7 @@ struct Table<T: TableTag, P: Position + Syzygy, F: ReadAt> {
 
     raf: F,
 
+    material: Material,
     num_unique_pieces: u8,
     min_like_man: u8,
     files: ArrayVec<FileData, 4>,
@@ -996,6 +997,7 @@ impl<T: TableTag, S: Position + Syzygy, F: ReadAt> Table<T, S, F> {
             raf,
             num_unique_pieces: material.unique_pieces(),
             min_like_man: material.min_like_man(),
+            material,
             files,
         })
     }
@@ -1158,7 +1160,7 @@ impl<T: TableTag, S: Position + Syzygy, F: ReadAt> Table<T, S, F> {
         // DTZ tables store only one side to move. It is possible that we have
         // to check the other side (by doing a 1-ply search).
         if T::METRIC == Metric::Dtz
-            && side.flags.contains(Flag::STM) != bside
+            && side.flags.contains(Flag::BLACK_TO_MOVE) != bside
             && (!material.is_symmetric() || material.has_pawns())
         {
             return Ok(None);
@@ -1425,6 +1427,51 @@ impl<T: TableTag, S: Position + Syzygy, F: ReadAt> Table<T, S, F> {
             }))
         })
     }
+
+    pub fn meta(&self) -> TableInfo {
+        TableInfo {
+            material: self.material.clone(),
+            metric: T::METRIC,
+            files: self
+                .files
+                .iter()
+                .map(|file| FileInfo {
+                    sides: file
+                        .sides
+                        .iter()
+                        .map(|side| SideInfo {
+                            flags: FlagsInfo {
+                                single_value: side.flags.contains(Flag::SINGLE_VALUE),
+                                mapped: (T::METRIC == Metric::Dtz)
+                                    .then(|| side.flags.contains(Flag::MAPPED)),
+                                black_to_move: side.flags.contains(Flag::BLACK_TO_MOVE),
+                                wide_dtz: (T::METRIC == Metric::Dtz)
+                                    .then(|| side.flags.contains(Flag::WIDE_DTZ)),
+                                win_plies: (T::METRIC == Metric::Dtz)
+                                    .then(|| side.flags.contains(Flag::WIN_PLIES)),
+                                loss_plies: (T::METRIC == Metric::Dtz)
+                                    .then(|| side.flags.contains(Flag::LOSS_PLIES)),
+                            },
+                            sparse_index: SparseIndexInfo {
+                                num: side.sparse_index_size,
+                                bytes: u64::from(side.sparse_index_size) * (4 + 2),
+                                blocks_per_entry: side.span,
+                            },
+                            block_lengths: BlockLengthsInfo {
+                                num: side.block_length_size,
+                                bytes: u64::from(side.block_length_size) * 2,
+                            },
+                            blocks: BlocksInfo {
+                                num: side.blocks_num,
+                                bytes: u64::from(side.block_size) * u64::from(side.blocks_num),
+                                min_symbol_bits: side.min_symlen,
+                            },
+                        })
+                        .collect(),
+                })
+                .collect(),
+        }
+    }
 }
 
 fn open_table_file<P: AsRef<Path>>(path: P) -> ProbeResult<RandomAccessFile> {
@@ -1456,6 +1503,10 @@ impl<S: Position + Syzygy> WdlTable<S, RandomAccessFile> {
     ) -> ProbeResult<WdlTable<S, RandomAccessFile>> {
         WdlTable::new(open_table_file(path)?, material)
     }
+
+    pub fn meta(&self) -> TableInfo {
+        self.table.meta()
+    }
 }
 
 /// A DTZ Table.
@@ -1480,5 +1531,9 @@ impl<S: Position + Syzygy> DtzTable<S, RandomAccessFile> {
         material: &Material,
     ) -> ProbeResult<DtzTable<S, RandomAccessFile>> {
         DtzTable::new(open_table_file(path)?, material)
+    }
+
+    pub fn meta(&self) -> TableInfo {
+        self.table.meta()
     }
 }

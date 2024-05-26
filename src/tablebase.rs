@@ -15,6 +15,7 @@ use tracing::trace_span;
 use crate::{
     errors::{ProbeResultExt as _, SyzygyError, SyzygyResult},
     material::Material,
+    meta::TableInfo,
     table::{DtzTable, WdlTable},
     types::{DecisiveWdl, Dtz, MaybeRounded, Metric, Syzygy, Wdl},
     AmbiguousWdl,
@@ -604,6 +605,17 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
         let key = Material::from_board(pos.board());
         self.dtz_table(&key)
             .and_then(|table| table.probe_dtz(pos, wdl).ctx(Metric::Dtz, key))
+    }
+
+    pub fn meta(&self) -> SyzygyResult<Vec<TableInfo>> {
+        let mut tables = Vec::with_capacity(self.wdl.len() + self.dtz.len());
+        for material in self.wdl.keys() {
+            tables.push(self.wdl_table(material)?.meta());
+        }
+        for material in self.dtz.keys() {
+            tables.push(self.dtz_table(material)?.meta());
+        }
+        Ok(tables)
     }
 }
 
