@@ -1,5 +1,6 @@
 use serde::Serialize;
 use serde_with::{serde_as, DisplayFromStr};
+use shakmaty::Color;
 
 use crate::{material::Material, types::Metric};
 
@@ -25,12 +26,19 @@ pub struct SideInfo {
     pub blocks: BlocksInfo,
 }
 
+#[serde_as]
 #[derive(Serialize)]
 pub struct FlagsInfo {
-    pub black_to_move: bool,
+    #[serde_as(as = "Option<DisplayFromStr>")]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub side: Option<Color>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub mapped: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub win_plies: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub loss_plies: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub wide_dtz: Option<bool>,
     pub single_value: bool,
 }
@@ -39,7 +47,7 @@ pub struct FlagsInfo {
 pub struct SparseIndexInfo {
     pub num: u32,
     pub bytes: u64,
-    pub blocks_per_entry: u32,
+    pub span: u32,
 }
 
 #[derive(Serialize)]

@@ -1444,7 +1444,9 @@ impl<T: TableTag, S: Position + Syzygy, F: ReadAt> Table<T, S, F> {
                                 single_value: side.flags.contains(Flag::SINGLE_VALUE),
                                 mapped: (T::METRIC == Metric::Dtz)
                                     .then(|| side.flags.contains(Flag::MAPPED)),
-                                black_to_move: side.flags.contains(Flag::BLACK_TO_MOVE),
+                                side: (T::METRIC == Metric::Dtz).then(|| {
+                                    Color::from_black(side.flags.contains(Flag::BLACK_TO_MOVE))
+                                }),
                                 wide_dtz: (T::METRIC == Metric::Dtz)
                                     .then(|| side.flags.contains(Flag::WIDE_DTZ)),
                                 win_plies: (T::METRIC == Metric::Dtz)
@@ -1455,7 +1457,7 @@ impl<T: TableTag, S: Position + Syzygy, F: ReadAt> Table<T, S, F> {
                             sparse_index: SparseIndexInfo {
                                 num: side.sparse_index_size,
                                 bytes: u64::from(side.sparse_index_size) * (4 + 2),
-                                blocks_per_entry: side.span,
+                                span: side.span,
                             },
                             block_lengths: BlockLengthsInfo {
                                 num: side.block_length_size,
