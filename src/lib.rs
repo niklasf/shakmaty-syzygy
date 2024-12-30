@@ -10,6 +10,7 @@
 //! use shakmaty::{CastlingMode, Chess, fen::Fen};
 //! use shakmaty_syzygy::{Tablebase, MaybeRounded, Wdl, Dtz, Syzygy};
 //!
+//! # smol::block_on::<Result<(), Box<dyn std::error::Error>>>(async {
 //! let mut tables = Tablebase::new();
 //! tables.add_directory("tables/chess")?;
 //!
@@ -17,12 +18,13 @@
 //!     .parse::<Fen>()?
 //!     .into_position(CastlingMode::Standard)?;
 //!
-//! let wdl = tables.probe_wdl_after_zeroing(&pos)?;
+//! let wdl = tables.probe_wdl_after_zeroing(&pos).await?;
 //! assert_eq!(wdl, Wdl::Loss);
 //!
-//! let dtz = tables.probe_dtz(&pos)?;
+//! let dtz = tables.probe_dtz(&pos).await?;
 //! assert!(matches!(dtz, MaybeRounded::Rounded(Dtz(-59))));
-//! # Ok::<_, Box<dyn std::error::Error>>(())
+//! #     Ok(())
+//! # });
 //! ```
 //!
 //! # Errors
