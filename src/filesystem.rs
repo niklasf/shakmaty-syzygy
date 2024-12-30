@@ -1,12 +1,14 @@
 //! Traits to provide a custom filesystem implementation.
 
+use async_trait::async_trait;
 use std::{
     fs, io,
     path::{Path, PathBuf},
 };
 
 /// An abstract filesystem.
-pub trait Filesystem: Sync + Send {
+#[async_trait]
+pub trait Filesystem: Send + Sync {
     /// Determines the size in bytes of the given file.
     ///
     /// Follows symbolic links.
@@ -31,7 +33,7 @@ pub trait Filesystem: Sync + Send {
     /// # Errors
     ///
     /// See [`std::fs::File::open()`].
-    fn open(&self, path: &Path) -> io::Result<Box<dyn RandomAccessFile>>;
+    async fn open(&self, path: &Path) -> io::Result<Box<dyn RandomAccessFile>>;
 }
 
 /// The purpose of a read. Advisory only.
@@ -51,20 +53,26 @@ pub enum ReadHint {
 }
 
 /// An abstract randomly readable file.
-pub trait RandomAccessFile: Sync + Send {
+#[async_trait]
+pub trait RandomAccessFile: Send + Sync {
     /// Reads some bytes starting from a given offset.
     ///
     /// See [`std::os::unix::fs::FileExt::read_at()`] for precise semantics.
-    fn read_at(&self, buf: &mut [u8], offset: u64, hint: ReadHint) -> io::Result<usize>;
+    async fn read_at(&self, buf: &mut [u8], offset: u64, hint: ReadHint) -> io::Result<usize>;
 
     /// Reads the exact number of bytes required to fill `buf` from the given
     /// offset.
     ///
     /// See [`std::os::unix::fs::FileExt::read_exact_at()`] for
     /// precise semantics.
-    fn read_exact_at(&self, mut buf: &mut [u8], mut offset: u64, hint: ReadHint) -> io::Result<()> {
+    async fn read_exact_at(
+        &self,
+        mut buf: &mut [u8],
+        mut offset: u64,
+        hint: ReadHint,
+    ) -> io::Result<()> {
         while !buf.is_empty() {
-            match self.read_at(buf, offset, hint) {
+            match self.read_at(buf, offset, hint).await {
                 Ok(0) => return Err(io::ErrorKind::UnexpectedEof.into()),
                 Ok(n) => {
                     let tmp = buf;
@@ -79,17 +87,17 @@ pub trait RandomAccessFile: Sync + Send {
     }
 
     /// Reads the single byte at a given offset.
-    fn read_u8_at(&self, offset: u64, hint: ReadHint) -> io::Result<u8> {
+    async fn read_u8_at(&self, offset: u64, hint: ReadHint) -> io::Result<u8> {
         let mut buf = [0];
-        self.read_exact_at(&mut buf[..], offset, hint)?;
+        self.read_exact_at(&mut buf[..], offset, hint).await?;
         Ok(buf[0])
     }
 
     /// Reads two bytes at a given offset, and interprets them as a
     /// little endian integer.
-    fn read_u16_le_at(&self, offset: u64, hint: ReadHint) -> io::Result<u16> {
+    async fn read_u16_le_at(&self, offset: u64, hint: ReadHint) -> io::Result<u16> {
         let mut buf = [0; 2];
-        self.read_exact_at(&mut buf[..], offset, hint)?;
+        self.read_exact_at(&mut buf[..], offset, hint).await?;
         Ok(u16::from_le_bytes(buf))
     }
 }
@@ -132,6 +140,7 @@ mod os {
         }
     }
 
+    #[async_trait]
     impl Filesystem for OsFilesystem {
         fn regular_file_size(&self, path: &Path) -> io::Result<u64> {
             regular_file_size_impl(path)
@@ -141,7 +150,7 @@ mod os {
             read_dir_impl(path)
         }
 
-        fn open(&self, path: &Path) -> io::Result<Box<dyn RandomAccessFile>> {
+        async fn open(&self, path: &Path) -> io::Result<Box<dyn RandomAccessFile>> {
             let file = fs::File::open(path)?;
 
             #[cfg(target_os = "linux")]
@@ -165,13 +174,14 @@ mod os {
         file: fs::File,
     }
 
+    #[async_trait]
     impl RandomAccessFile for OsRandomAccessFile {
         #[cfg(unix)]
-        fn read_at(&self, buf: &mut [u8], offset: u64, _hint: ReadHint) -> io::Result<usize> {
+        async fn read_at(&self, buf: &mut [u8], offset: u64, _hint: ReadHint) -> io::Result<usize> {
             std::os::unix::fs::FileExt::read_at(&self.file, buf, offset)
         }
         #[cfg(windows)]
-        fn read_at(&self, buf: &mut [u8], offset: u64, _hint: ReadHint) -> io::Result<usize> {
+        async fn read_at(&self, buf: &mut [u8], offset: u64, _hint: ReadHint) -> io::Result<usize> {
             std::os::windows::fs::FileExt::seek_read(&self.file, buf, offset)
         }
     }
@@ -234,6 +244,7 @@ mod mmap {
         }
     }
 
+    #[async_trait]
     impl Filesystem for MmapFilesystem {
         fn regular_file_size(&self, path: &Path) -> io::Result<u64> {
             regular_file_size_impl(path)
@@ -243,7 +254,7 @@ mod mmap {
             read_dir_impl(path)
         }
 
-        fn open(&self, path: &Path) -> io::Result<Box<dyn RandomAccessFile>> {
+        async fn open(&self, path: &Path) -> io::Result<Box<dyn RandomAccessFile>> {
             let file = fs::File::open(path)?;
 
             // Safety: Contract forwarded to MmapFilesystem::new().
@@ -262,8 +273,9 @@ mod mmap {
         mmap: Mmap,
     }
 
+    #[async_trait]
     impl RandomAccessFile for MmapRandomAccessFile {
-        fn read_at(&self, buf: &mut [u8], offset: u64, _hint: ReadHint) -> io::Result<usize> {
+        async fn read_at(&self, buf: &mut [u8], offset: u64, _hint: ReadHint) -> io::Result<usize> {
             let offset = offset as usize;
             let end = offset + buf.len();
             buf.copy_from_slice(
