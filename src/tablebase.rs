@@ -1,5 +1,5 @@
 use std::{
-    cmp::{max /*, Reverse */},
+    cmp::{max, Reverse},
     ffi::OsStr,
     fmt, io,
     path::{Path, PathBuf},
@@ -9,7 +9,7 @@ use std::{
 /* use arrayvec::ArrayVec; */
 use async_lock::OnceCell;
 use rustc_hash::FxHashMap;
-use shakmaty::{/*Move,*/ Position, Role};
+use shakmaty::{Move, Position, Role};
 
 use crate::{
     errors::{ProbeResultExt as _, SyzygyError, SyzygyResult},
@@ -286,7 +286,6 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
         self.probe(pos).await?.dtz().await
     }
 
-    /*
     /// Get the recommended tablebase move.
     ///
     /// Following the tablebase mainline *starting from a capture or pawn move*
@@ -301,8 +300,9 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
     /// # Errors
     ///
     /// See [`SyzygyError`] for possible error conditions.
-    pub fn best_move(&self, pos: &S) -> SyzygyResult<Option<(Move, MaybeRounded<Dtz>)>> {
-        struct WithAfter<S> {
+    pub async fn best_move(&self, pos: &S) -> SyzygyResult<Option<(Move, MaybeRounded<Dtz>)>> {
+        todo!()
+        /* struct WithAfter<S> {
             m: Move,
             after: S,
         }
@@ -375,7 +375,8 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
                 )
             })
             .map(|m| (m.m, m.dtz)))
-    } */
+        */
+    }
 
     async fn probe<'a>(&'a self, pos: &'a S) -> SyzygyResult<WdlEntry<'a, S>> {
         // Probing resolves captures, so sometimes we can obtain results
