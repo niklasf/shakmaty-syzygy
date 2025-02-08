@@ -10,7 +10,7 @@
 //! use shakmaty::{CastlingMode, Chess, fen::Fen};
 //! use shakmaty_syzygy::{Tablebase, MaybeRounded, Wdl, Dtz, Syzygy};
 //!
-//! # smol::block_on::<Result<(), Box<dyn std::error::Error>>>(async {
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut tables = Tablebase::new();
 //! tables.add_directory("tables/chess")?;
 //!
@@ -18,13 +18,13 @@
 //!     .parse::<Fen>()?
 //!     .into_position(CastlingMode::Standard)?;
 //!
-//! let wdl = tables.probe_wdl_after_zeroing(&pos).await?;
+//! let wdl = tables.probe_wdl_after_zeroing(&pos)?;
 //! assert_eq!(wdl, Wdl::Loss);
 //!
-//! let dtz = tables.probe_dtz(&pos).await?;
+//! let dtz = tables.probe_dtz(&pos)?;
 //! assert!(matches!(dtz, MaybeRounded::Rounded(Dtz(-59))));
 //! #     Ok(())
-//! # });
+//! # }
 //! ```
 //!
 //! # Errors
@@ -50,6 +50,7 @@ mod material;
 mod types;
 
 pub use crate::{
+    blocking::Tablebase,
     errors::{ProbeError, SyzygyError},
     material::Material,
     types::{AmbiguousWdl, Dtz, MaybeRounded, Metric, Syzygy, TableType, Wdl},
