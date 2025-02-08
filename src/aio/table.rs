@@ -6,8 +6,8 @@ use byteorder::{ByteOrder as _, ReadBytesExt as _, BE, LE};
 use shakmaty::{Bitboard, Color, File, Piece, Position, Rank, Role, Square};
 
 use crate::{
+    aio::filesystem::{RandomAccessFile, ReadHint},
     errors::{ProbeError, ProbeResult},
-    filesystem::{RandomAccessFile, ReadHint},
     material::Material,
     types::{DecisiveWdl, MaybeRounded, Metric, Pieces, Syzygy, Wdl, MAX_PIECES},
 };
@@ -394,7 +394,7 @@ impl Consts {
 }
 
 /// Read the magic header bytes that identify a tablebase file.
-async fn read_magic_header(raf: &dyn RandomAccessFile) -> ProbeResult<[u8; 4]> {
+async fn read_magic_header<R: RandomAccessFile>(raf: &R) -> ProbeResult<[u8; 4]> {
     let mut buf = [0; 4];
     if let Err(error) = raf.read_exact_at(&mut buf, 0, ReadHint::Header).await {
         match error.kind() {
@@ -426,8 +426,8 @@ fn offdiag(sq: Square) -> bool {
 }
 
 /// Parse a piece list.
-async fn parse_pieces(
-    raf: &dyn RandomAccessFile,
+async fn parse_pieces<R: RandomAccessFile>(
+    raf: &R,
     ptr: u64,
     count: usize,
     side: Color,
@@ -552,9 +552,9 @@ enum DtzMap {
 }
 
 impl DtzMap {
-    async fn read(
+    async fn read<R: RandomAccessFile>(
         &self,
-        raf: &dyn RandomAccessFile,
+        raf: &R,
         wdl: DecisiveWdl,
         res: u16,
     ) -> ProbeResult<u16> {
@@ -641,8 +641,8 @@ struct PairsData {
 }
 
 impl PairsData {
-    pub async fn parse<S: Syzygy, T: TableTag>(
-        raf: &dyn RandomAccessFile,
+    pub async fn parse<T: TableTag, S: Syzygy, R: RandomAccessFile>(
+        raf: &R,
         mut ptr: u64,
         groups: GroupData,
     ) -> ProbeResult<(PairsData, u64)> {
@@ -763,8 +763,8 @@ impl PairsData {
 }
 
 /// Build the symbol table.
-async fn read_symbols(
-    raf: &dyn RandomAccessFile,
+async fn read_symbols<R: RandomAccessFile>(
+    raf: &R,
     btree: u64,
     symbols: &mut Vec<Symbol>,
     visited: &mut [bool],
@@ -826,18 +826,18 @@ struct FileData {
 }
 
 /// A Syzygy table.
-struct Table<T: TableTag, P: Position + Syzygy> {
+struct Table<T, S, R> {
     is_wdl: PhantomData<T>,
-    syzygy: PhantomData<P>,
+    syzygy: PhantomData<S>,
 
-    raf: Box<dyn RandomAccessFile>,
+    raf: R,
 
     num_unique_pieces: usize,
     min_like_man: usize,
     files: ArrayVec<FileData, 4>,
 }
 
-impl<T: TableTag, P: Position + Syzygy> fmt::Debug for Table<T, P> {
+impl<T, S, R> fmt::Debug for Table<T, S, R> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Table")
             .field("num_unique_pieces", &self.num_unique_pieces)
@@ -847,7 +847,7 @@ impl<T: TableTag, P: Position + Syzygy> fmt::Debug for Table<T, P> {
     }
 }
 
-impl<T: TableTag, S: Position + Syzygy> Table<T, S> {
+impl<T: TableTag, S: Syzygy, R: RandomAccessFile> Table<T, S, R> {
     /// Open a table, parse the header, the headers of the subtables and
     /// prepare meta data required for decompression.
     ///
@@ -855,10 +855,7 @@ impl<T: TableTag, S: Position + Syzygy> Table<T, S> {
     ///
     /// Panics if the `material` configuration is not supported by Syzygy
     /// tablebases (more than 7 pieces or side without pieces).
-    pub async fn new(
-        raf: Box<dyn RandomAccessFile>,
-        material: &Material,
-    ) -> ProbeResult<Table<T, S>> {
+    pub async fn new(raf: R, material: &Material) -> ProbeResult<Table<T, S, R>> {
         assert!(material.count() <= MAX_PIECES);
         assert!(material.by_color.white.count() >= 1);
         assert!(material.by_color.black.count() >= 1);
@@ -869,7 +866,7 @@ impl<T: TableTag, S: Position + Syzygy> Table<T, S> {
             Metric::Dtz => (S::TBZ.magic, S::PAWNLESS_TBZ.map(|t| t.magic)),
         };
 
-        let magic_header = read_magic_header(&*raf).await?;
+        let magic_header = read_magic_header(&raf).await?;
         if magic != magic_header && (material.has_pawns() || pawnless_magic != Some(magic_header)) {
             return Err(ProbeError::Magic {
                 magic: magic_header,
@@ -921,7 +918,7 @@ impl<T: TableTag, S: Position + Syzygy> Table<T, S> {
 
             let mut sides = ArrayVec::new();
             for side in [Color::White, Color::Black].into_iter().take(num_sides) {
-                let pieces = parse_pieces(&*raf, ptr, material.count(), side).await?;
+                let pieces = parse_pieces(&raf, ptr, material.count(), side).await?;
                 let key = Material::from_iter(pieces.clone());
                 ensure!(&key == material || &key.into_swapped() == material);
                 sides.push(GroupData::new::<S>(
@@ -954,7 +951,7 @@ impl<T: TableTag, S: Position + Syzygy> Table<T, S> {
         for file in files {
             let mut sides = ArrayVec::<_, 2>::new();
             for side in file {
-                let (mut pairs, next_ptr) = PairsData::parse::<S, T>(&*raf, ptr, side).await?;
+                let (mut pairs, next_ptr) = PairsData::parse::<T, S, R>(&raf, ptr, side).await?;
 
                 if T::METRIC == Metric::Dtz
                     && S::CAPTURES_COMPULSORY
@@ -1151,7 +1148,9 @@ impl<T: TableTag, S: Position + Syzygy> Table<T, S> {
             }
         }
     }
+}
 
+impl<T: TableTag, S: Syzygy + Position, R: RandomAccessFile> Table<T, S, R> {
     /// Given a position, determine the unique (modulo symmetries) index into
     /// the corresponding subtable.
     fn encode(&self, pos: &S) -> ProbeResult<Option<(&PairsData, u64)>> {
@@ -1457,7 +1456,7 @@ impl<T: TableTag, S: Position + Syzygy> Table<T, S> {
 
         let res = u32::from(match side.dtz_map {
             None => res,
-            Some(ref map) => map.read(&*self.raf, wdl, res).await?,
+            Some(ref map) => map.read(&self.raf, wdl, res).await?,
         });
 
         let stores_plies = match wdl {
@@ -1476,20 +1475,19 @@ impl<T: TableTag, S: Position + Syzygy> Table<T, S> {
 
 /// A WDL Table.
 #[derive(Debug)]
-pub struct WdlTable<S: Position + Syzygy> {
-    table: Table<WdlTag, S>,
+pub struct WdlTable<S, R> {
+    table: Table<WdlTag, S, R>,
 }
 
-impl<S: Position + Syzygy> WdlTable<S> {
-    pub async fn new(
-        raf: Box<dyn RandomAccessFile>,
-        material: &Material,
-    ) -> ProbeResult<WdlTable<S>> {
+impl<S: Syzygy, R: RandomAccessFile> WdlTable<S, R> {
+    pub async fn new(raf: R, material: &Material) -> ProbeResult<WdlTable<S, R>> {
         Table::new(raf, material)
             .await
             .map(|table| WdlTable { table })
     }
+}
 
+impl<S: Syzygy + Position, R: RandomAccessFile> WdlTable<S, R> {
     pub async fn probe_wdl(&self, pos: &S) -> ProbeResult<Wdl> {
         self.table.probe_wdl(pos).await
     }
@@ -1497,20 +1495,19 @@ impl<S: Position + Syzygy> WdlTable<S> {
 
 /// A DTZ Table.
 #[derive(Debug)]
-pub struct DtzTable<S: Position + Syzygy> {
-    table: Table<DtzTag, S>,
+pub struct DtzTable<S, R> {
+    table: Table<DtzTag, S, R>,
 }
 
-impl<S: Position + Syzygy> DtzTable<S> {
-    pub async fn new(
-        raf: Box<dyn RandomAccessFile>,
-        material: &Material,
-    ) -> ProbeResult<DtzTable<S>> {
+impl<S: Syzygy, R: RandomAccessFile> DtzTable<S, R> {
+    pub async fn new(raf: R, material: &Material) -> ProbeResult<DtzTable<S, R>> {
         Table::new(raf, material)
             .await
             .map(|table| DtzTable { table })
     }
+}
 
+impl<S: Syzygy + Position, R: RandomAccessFile> DtzTable<S, R> {
     pub async fn probe_dtz(
         &self,
         pos: &S,

@@ -12,11 +12,10 @@ use rustc_hash::FxHashMap;
 use shakmaty::{Move, Position, Role};
 
 use crate::{
+    aio::filesystem::Filesystem,
+    aio::table::{DtzTable, WdlTable},
     errors::{ProbeResultExt as _, SyzygyError, SyzygyResult},
-    filesystem,
-    filesystem::Filesystem,
     material::{Material, NormalizedMaterial},
-    table::{DtzTable, WdlTable},
     types::{DecisiveWdl, Dtz, MaybeRounded, Metric, Syzygy, Wdl},
     AmbiguousWdl,
 };
@@ -34,14 +33,18 @@ enum ProbeState {
 }
 
 /// A collection of tables.
-pub struct Tablebase<S: Position + Clone + Syzygy> {
-    filesystem: Arc<dyn Filesystem>,
-    wdl: FxHashMap<NormalizedMaterial, (PathBuf, OnceCell<WdlTable<S>>)>,
-    dtz: FxHashMap<NormalizedMaterial, (PathBuf, OnceCell<DtzTable<S>>)>,
+pub struct Tablebase<S, F: Filesystem> {
+    filesystem: F,
+    wdl: FxHashMap<NormalizedMaterial, (PathBuf, OnceCell<WdlTable<S, F::RandomAccessFile>>)>,
+    dtz: FxHashMap<NormalizedMaterial, (PathBuf, OnceCell<DtzTable<S, F::RandomAccessFile>>)>,
     max_pieces: usize,
 }
 
-impl<S: Position + Clone + Syzygy + fmt::Debug> fmt::Debug for Tablebase<S> {
+impl<S: Syzygy, F: Filesystem> fmt::Debug for Tablebase<S, F>
+where
+    S: fmt::Debug,
+    F::RandomAccessFile: fmt::Debug,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Tablebase")
             .field("wdl", &self.wdl)
@@ -51,15 +54,15 @@ impl<S: Position + Clone + Syzygy + fmt::Debug> fmt::Debug for Tablebase<S> {
     }
 }
 
-#[cfg(any(unix, windows))]
+/* #[cfg(any(unix, windows))]
 impl<S: Position + Clone + Syzygy> Default for Tablebase<S> {
     fn default() -> Tablebase<S> {
         Tablebase::new()
     }
-}
+} */
 
-impl<S: Position + Clone + Syzygy> Tablebase<S> {
-    /// Creates an empty collection of tables. A safe default filesystem
+impl<S, F: Filesystem> Tablebase<S, F> {
+    /* /// Creates an empty collection of tables. A safe default filesystem
     /// implementation will be used to read table files.
     #[cfg(any(unix, windows))]
     pub fn new() -> Tablebase<S> {
@@ -84,11 +87,11 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
         // Safety: Forwarding contract of memmap2::MmapOptions::map()
         // to caller.
         Tablebase::with_filesystem(unsafe { Arc::new(filesystem::MmapFilesystem::new()) })
-    }
+    } */
 
     /// Creates an empty collection of tables. A custom filesystem
     /// implementation will be used to read table files.
-    pub fn with_filesystem(filesystem: Arc<dyn Filesystem>) -> Tablebase<S> {
+    pub fn with_filesystem(filesystem: F) -> Tablebase<S, F> {
         Tablebase {
             filesystem,
             wdl: FxHashMap::with_capacity_and_hasher(145, Default::default()),
@@ -104,7 +107,9 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
     pub fn max_pieces(&self) -> usize {
         self.max_pieces
     }
+}
 
+impl<S: Syzygy, F: Filesystem> Tablebase<S, F> {
     /// Add all relevant tables from a directory.
     ///
     /// Tables are selected by filename, e.g., `KQvKP.rtbz`.
@@ -132,11 +137,11 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
     ///   maybe have already been added.
     /// * There is a table in `path` where the file size indicates that
     ///   it must be corrupted. Some tables may have already been added.
-    pub fn add_directory<P: AsRef<Path>>(&mut self, path: P) -> io::Result<usize> {
+    pub async fn add_directory<P: AsRef<Path>>(&mut self, path: P) -> io::Result<usize> {
         let mut num = 0;
 
-        for entry in self.filesystem.read_dir(path.as_ref())? {
-            match self.add_file_impl(&entry) {
+        for entry in self.filesystem.read_dir(path.as_ref()).await? {
+            match self.add_file_impl(&entry).await {
                 Ok(()) => num += 1,
                 Err(err) if err.kind() == io::ErrorKind::InvalidInput => (), // Not a table. Ignore
                 Err(err) => return Err(err),
@@ -162,11 +167,11 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
     ///   broken symlink, no permission to read metadata, ...).
     /// * `path` is not pointing to a regular file.
     /// * The file size indicates that the table file must be corrupted.
-    pub fn add_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
-        self.add_file_impl(path.as_ref())
+    pub async fn add_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+        self.add_file_impl(path.as_ref()).await
     }
 
-    fn add_file_impl(&mut self, path: &Path) -> io::Result<()> {
+    async fn add_file_impl(&mut self, path: &Path) -> io::Result<()> {
         // Validate filename.
         let Some(stem) = path.file_stem().and_then(OsStr::to_str) else {
             return Err(io::Error::from(io::ErrorKind::InvalidInput));
@@ -195,7 +200,7 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
         }
 
         // Check meta data.
-        if self.filesystem.regular_file_size(path)? % 64 != 16 {
+        if self.filesystem.regular_file_size(path).await? % 64 != 16 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "unexpected file size",
@@ -214,7 +219,10 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
         Ok(())
     }
 
-    async fn wdl_table(&self, material: &NormalizedMaterial) -> SyzygyResult<&WdlTable<S>> {
+    async fn wdl_table(
+        &self,
+        material: &NormalizedMaterial,
+    ) -> SyzygyResult<&WdlTable<S, F::RandomAccessFile>> {
         if let Some((path, table)) = self.wdl.get(material) {
             table
                 .get_or_try_init(|| async {
@@ -230,7 +238,10 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
         }
     }
 
-    async fn dtz_table(&self, material: &NormalizedMaterial) -> SyzygyResult<&DtzTable<S>> {
+    async fn dtz_table(
+        &self,
+        material: &NormalizedMaterial,
+    ) -> SyzygyResult<&DtzTable<S, F::RandomAccessFile>> {
         if let Some((path, table)) = self.dtz.get(material) {
             table
                 .get_or_try_init(|| async {
@@ -245,7 +256,9 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
             })
         }
     }
+}
 
+impl<S: Syzygy + Position + Clone, F: Filesystem> Tablebase<S, F> {
     /// Probe tables for the [`Wdl`] value of a position, assuming `pos`
     /// is reached directly after a capture or pawn move.
     ///
@@ -378,7 +391,7 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
         */
     }
 
-    async fn probe<'a>(&'a self, pos: &'a S) -> SyzygyResult<WdlEntry<'a, S>> {
+    async fn probe<'a>(&'a self, pos: &'a S) -> SyzygyResult<WdlEntry<'a, S, F>> {
         // Probing resolves captures, so sometimes we can obtain results
         // for positions that have more pieces than the maximum amount of
         // supported pieces. We artificially limit this to one additional
@@ -671,15 +684,14 @@ impl<S: Position + Clone + Syzygy> Tablebase<S> {
 }
 
 /// WDL entry. Prerequisite for probing DTZ tables.
-#[derive(Debug)]
-struct WdlEntry<'a, S: Position + Clone + Syzygy> {
-    tablebase: &'a Tablebase<S>,
+struct WdlEntry<'a, S, F: Filesystem> {
+    tablebase: &'a Tablebase<S, F>,
     pos: &'a S,
     wdl: Wdl,
     state: ProbeState,
 }
 
-impl<'a, S: Position + Clone + Syzygy + 'a> WdlEntry<'a, S> {
+impl<'a, S: Position + Clone + Syzygy + 'a, F: Filesystem> WdlEntry<'a, S, F> {
     fn wdl_after_zeroing(&self) -> Wdl {
         self.wdl
     }

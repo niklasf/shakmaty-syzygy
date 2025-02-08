@@ -1,14 +1,14 @@
 //! Traits to provide a custom filesystem implementation.
 
-use async_trait::async_trait;
 use std::{
     fs, io,
     path::{Path, PathBuf},
 };
 
 /// An abstract filesystem.
-#[async_trait]
-pub trait Filesystem: Send + Sync {
+pub trait Filesystem {
+    type RandomAccessFile: RandomAccessFile;
+
     /// Determines the size in bytes of the given file.
     ///
     /// Follows symbolic links.
@@ -18,7 +18,7 @@ pub trait Filesystem: Send + Sync {
     /// See [`std::fs::metadata()`]. Additionally errors with
     /// [`std::io::ErrorKind::InvalidInput`] if `path` does not
     /// ultimately point to a regular file.
-    fn regular_file_size(&self, path: &Path) -> io::Result<u64>;
+    async fn regular_file_size(&self, path: &Path) -> io::Result<u64>;
 
     /// Returns a list of files in the given directory. May filter for table
     /// files.
@@ -26,14 +26,14 @@ pub trait Filesystem: Send + Sync {
     /// # Errors
     ///
     /// See [`std::fs::read_dir()`].
-    fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>>;
+    async fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>>;
 
     /// Opens the given file, returning a handle for random read requests.
     ///
     /// # Errors
     ///
     /// See [`std::fs::File::open()`].
-    async fn open(&self, path: &Path) -> io::Result<Box<dyn RandomAccessFile>>;
+    async fn open(&self, path: &Path) -> io::Result<Self::RandomAccessFile>;
 }
 
 /// The purpose of a read. Advisory only.
@@ -53,8 +53,7 @@ pub enum ReadHint {
 }
 
 /// An abstract randomly readable file.
-#[async_trait]
-pub trait RandomAccessFile: Send + Sync {
+pub trait RandomAccessFile {
     /// Reads some bytes starting from a given offset.
     ///
     /// See [`std::os::unix::fs::FileExt::read_at()`] for precise semantics.
@@ -104,7 +103,7 @@ pub trait RandomAccessFile: Send + Sync {
 
 #[cfg(any(unix, windows))]
 mod os {
-    use std::fmt;
+    use std::{fmt, marker::PhantomData};
 
     use super::*;
 
@@ -140,17 +139,18 @@ mod os {
         }
     }
 
-    #[async_trait]
     impl Filesystem for OsFilesystem {
-        fn regular_file_size(&self, path: &Path) -> io::Result<u64> {
+        type RandomAccessFile = OsRandomAccessFile;
+
+        async fn regular_file_size(&self, path: &Path) -> io::Result<u64> {
             regular_file_size_impl(path)
         }
 
-        fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
+        async fn read_dir(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
             read_dir_impl(path)
         }
 
-        async fn open(&self, path: &Path) -> io::Result<Box<dyn RandomAccessFile>> {
+        async fn open(&self, path: &Path) -> io::Result<Self::RandomAccessFile> {
             let file = fs::File::open(path)?;
 
             #[cfg(target_os = "linux")]
@@ -166,15 +166,18 @@ mod os {
                 }
             }
 
-            Ok(Box::new(OsRandomAccessFile { file }))
+            Ok(OsRandomAccessFile {
+                file,
+                marker: PhantomData,
+            })
         }
     }
 
-    struct OsRandomAccessFile {
+    pub struct OsRandomAccessFile {
         file: fs::File,
+        marker: std::marker::PhantomData<*mut u8>, // not sync
     }
 
-    #[async_trait]
     impl RandomAccessFile for OsRandomAccessFile {
         #[cfg(unix)]
         async fn read_at(&self, buf: &mut [u8], offset: u64, _hint: ReadHint) -> io::Result<usize> {
