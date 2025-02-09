@@ -367,7 +367,7 @@ fn read_dir_impl(path: &Path) -> io::Result<Vec<PathBuf>> {
 
 #[cfg(test)]
 mod tests {
-    use shakmaty::{fen::Fen, CastlingMode, Chess /* Square */};
+    use shakmaty::{fen::Fen, CastlingMode, Chess, Role, Square};
 
     use super::*;
 
@@ -380,7 +380,7 @@ mod tests {
         assert_sync(Tablebase::<Chess>::new());
     }
 
-    /* #[test]
+    #[test]
     fn test_mating_best_move() {
         let mut tables = Tablebase::new();
         tables
@@ -406,9 +406,9 @@ mod tests {
                 MaybeRounded::Rounded(Dtz(-1))
             )))
         ));
-    } */
+    }
 
-    /* #[test]
+    #[test]
     fn test_black_escapes_via_underpromotion() {
         let mut tables = Tablebase::new();
         tables
@@ -434,7 +434,7 @@ mod tests {
                 MaybeRounded::Rounded(Dtz(109))
             )))
         ));
-    } */
+    }
 
     #[test]
     #[ignore]

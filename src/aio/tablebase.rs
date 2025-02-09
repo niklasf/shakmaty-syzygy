@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-/* use arrayvec::ArrayVec; */
+use arrayvec::ArrayVec;
 use async_lock::OnceCell;
 use rustc_hash::FxHashMap;
 use shakmaty::{Move, Position, Role};
@@ -310,15 +310,16 @@ impl<S: Syzygy + Position + Clone, F: Filesystem> Tablebase<S, F> {
     ///
     /// See [`SyzygyError`] for possible error conditions.
     pub async fn best_move(&self, pos: &S) -> SyzygyResult<Option<(Move, MaybeRounded<Dtz>)>> {
-        todo!()
-        /* struct WithAfter<S> {
+        const MAX_MOVES: usize = 256;
+
+        struct WithAfter<S> {
             m: Move,
             after: S,
         }
 
-        struct WithWdlEntry<'a, S: Position + Clone + Syzygy> {
+        struct WithWdlEntry<'a, S, F: Filesystem> {
             m: Move,
-            entry: WdlEntry<'a, S>,
+            entry: WdlEntry<'a, S, F>,
         }
 
         struct WithDtz {
@@ -337,41 +338,39 @@ impl<S: Syzygy + Position + Clone, F: Filesystem> Tablebase<S, F> {
                 after.play_unchecked(&m);
                 WithAfter { m, after }
             })
-            .collect::<ArrayVec<_, 256>>();
+            .collect::<ArrayVec<_, MAX_MOVES>>();
 
         // Determine WDL for each move.
-        let with_wdl = with_after
-            .iter()
-            .map(|e| {
-                Ok(WithWdlEntry {
-                    m: e.m.clone(),
-                    entry: self.probe(&e.after).await?,
-                })
-            })
-            .collect::<SyzygyResult<ArrayVec<_, 256>>>()?;
+        let mut with_wdl = ArrayVec::<_, MAX_MOVES>::new();
+        for e in with_after.iter() {
+            let entry = self.probe(&e.after).await?;
+            with_wdl.push(WithWdlEntry {
+                m: e.m.clone(),
+                entry,
+            });
+        }
 
-        // Find best WDL.
+        // Consider only WDL-optimal moves.
         let best_wdl = with_wdl
             .iter()
             .map(|a| a.entry.wdl)
             .min()
             .unwrap_or(Wdl::Loss);
 
+        with_wdl.retain(|a| a.entry.wdl == best_wdl);
+
         // Determine DTZ for each WDL-optimal move.
-        let with_dtz = with_wdl
-            .iter()
-            .filter(|a| a.entry.wdl == best_wdl)
-            .map(|a| {
-                let dtz = a.entry.dtz()?;
-                Ok(WithDtz {
-                    immediate_loss: dtz.ignore_rounding() == Dtz(-1)
-                        && (a.entry.pos.is_checkmate() || a.entry.pos.variant_outcome().is_some()),
-                    zeroing: a.m.is_zeroing(),
-                    m: a.m.clone(),
-                    dtz,
-                })
-            })
-            .collect::<SyzygyResult<ArrayVec<_, 256>>>()?;
+        let mut with_dtz = ArrayVec::<WithDtz, MAX_MOVES>::new();
+        for e in with_wdl.iter() {
+            let dtz = e.entry.dtz().await?;
+            with_dtz.push(WithDtz {
+                m: e.m.clone(),
+                immediate_loss: dtz.ignore_rounding() == Dtz(-1)
+                    && (e.entry.pos.is_checkmate() || e.entry.pos.variant_outcome().is_some()),
+                zeroing: e.entry.state == ProbeState::ZeroingBestMove,
+                dtz,
+            });
+        }
 
         // Select a DTZ-optimal move among the moves with best WDL.
         Ok(with_dtz
@@ -384,7 +383,6 @@ impl<S: Syzygy + Position + Clone, F: Filesystem> Tablebase<S, F> {
                 )
             })
             .map(|m| (m.m, m.dtz)))
-        */
     }
 
     async fn probe<'a>(&'a self, pos: &'a S) -> SyzygyResult<WdlEntry<'a, S, F>> {
