@@ -250,7 +250,7 @@ mod os {
     use super::*;
 
     #[derive(Debug)]
-    pub struct OsFilesystem;
+    pub(crate) struct OsFilesystem;
 
     impl BlockingFilesystem for OsFilesystem {
         fn regular_file_size_blocking(&self, path: &Path) -> io::Result<u64> {
@@ -301,7 +301,7 @@ mod mmap {
     use memmap2::{Mmap, MmapOptions};
 
     #[derive(Debug)]
-    pub struct MmapFilesystem {
+    pub(crate) struct MmapFilesystem {
         _unsafe_priv: (),
     }
 
@@ -333,7 +333,12 @@ mod mmap {
     }
 
     impl BlockingRandomAccessFile for MmapRandomAccessFile {
-        async fn read_at(&self, buf: &mut [u8], offset: u64, _hint: ReadHint) -> io::Result<usize> {
+        fn read_at_blocking(
+            &self,
+            buf: &mut [u8],
+            offset: u64,
+            _hint: ReadHint,
+        ) -> io::Result<usize> {
             let offset = offset as usize;
             let end = offset + buf.len();
             buf.copy_from_slice(
