@@ -1,43 +1,40 @@
 #![no_main]
 
-use futures_util::future::FutureExt as _;
 use std::{
     io,
     path::{Path, PathBuf},
-    rc::Rc,
 };
 
+use futures_util::future::FutureExt as _;
 use libfuzzer_sys::fuzz_target;
 use shakmaty::{fen::Fen, CastlingMode, Chess};
 use shakmaty_syzygy::aio::{Filesystem, RandomAccessFile, ReadHint, Tablebase};
 
-struct FakeFilesystem {
-    data: Rc<[u8]>,
+struct FakeFilesystem<'a> {
+    data: &'a [u8],
 }
 
-impl Filesystem for FakeFilesystem {
-    type RandomAccessFile = FakeFile;
-
-    async fn regular_file_size(&self, _path: &Path) -> io::Result<u64> {
-        Ok(self.data.len() as u64)
-    }
+impl<'a> Filesystem for FakeFilesystem<'a> {
+    type RandomAccessFile = FakeFile<'a>;
 
     async fn read_dir(&self, _path: &Path) -> io::Result<Vec<PathBuf>> {
         Ok(vec!["KNvKP.rtbw".into()])
     }
 
-    async fn open(&self, _path: &Path) -> io::Result<FakeFile> {
-        Ok(FakeFile {
-            data: Rc::clone(&self.data),
-        })
+    async fn regular_file_size(&self, _path: &Path) -> io::Result<u64> {
+        Ok(148048)
+    }
+
+    async fn open(&self, _path: &Path) -> io::Result<FakeFile<'a>> {
+        Ok(FakeFile { data: self.data })
     }
 }
 
-struct FakeFile {
-    data: Rc<[u8]>,
+struct FakeFile<'a> {
+    data: &'a [u8],
 }
 
-impl RandomAccessFile for FakeFile {
+impl RandomAccessFile for FakeFile<'_> {
     async fn read_at(&self, buf: &mut [u8], offset: u64, _hint: ReadHint) -> io::Result<usize> {
         let offset = offset as usize;
         let end = offset + buf.len();
@@ -57,10 +54,16 @@ fuzz_target!(|data: &[u8]| {
         .into_position(CastlingMode::Standard)
         .expect("valid position");
 
-    let tables = Tablebase::with_filesystem(FakeFilesystem { data: data.into() });
+    let mut tables = Tablebase::with_filesystem(FakeFilesystem { data });
 
-    let _ = tables
-        .probe_wdl(&pos)
-        .now_or_never()
-        .expect("blocking probe");
+    assert_eq!(
+        tables
+            .add_directory("fake")
+            .now_or_never()
+            .expect("blocking")
+            .expect("add directory"),
+        1
+    );
+
+    let _ = tables.probe_wdl(&pos).now_or_never().expect("blocking");
 });
