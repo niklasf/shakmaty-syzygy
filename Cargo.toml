@@ -27,9 +27,6 @@ async-trait = "0.1.83"
 async-lock = "3.4"
 futures-util = "0.3.31"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2" # for optional posix_fadvise
-
 [dev-dependencies]
 csv = "1"
 bencher = "0.1"

@@ -3,7 +3,6 @@ use std::{
     ffi::OsStr,
     fmt, io,
     path::{Path, PathBuf},
-    sync::Arc,
 };
 
 /* use arrayvec::ArrayVec; */
@@ -47,9 +46,9 @@ where
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Tablebase")
+            .field("max_pieces", &self.max_pieces)
             .field("wdl", &self.wdl)
             .field("dtz", &self.dtz)
-            .field("max_pieces", &self.max_pieces)
             .finish_non_exhaustive()
     }
 }

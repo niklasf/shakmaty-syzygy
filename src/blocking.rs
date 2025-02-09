@@ -11,11 +11,13 @@ use crate::Wdl;
 use futures_util::future::FutureExt;
 use shakmaty::Move;
 use shakmaty::Position;
+use std::fmt;
+use std::fmt::Debug;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
 
-trait BlockingFilesystem: Sync + Send {
+trait BlockingFilesystem: Debug + Sync + Send {
     fn regular_file_size_blocking(&self, path: &Path) -> io::Result<u64>;
     fn read_dir_blocking(&self, path: &Path) -> io::Result<Vec<PathBuf>>;
     fn open_blocking(&self, path: &Path) -> io::Result<Box<dyn BlockingRandomAccessFile>>;
@@ -37,7 +39,7 @@ impl Filesystem for Box<dyn BlockingFilesystem> {
     }
 }
 
-trait BlockingRandomAccessFile: Sync + Send {
+trait BlockingRandomAccessFile: Debug + Sync + Send {
     fn read_at_blocking(&self, buf: &mut [u8], offset: u64, hint: ReadHint) -> io::Result<usize>;
 }
 
@@ -59,12 +61,23 @@ impl Default for Tablebase<()> {
     }
 }
 
+impl<S: Syzygy> Debug for Tablebase<S>
+where
+    S: Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Tablebase")
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
 impl<S> Tablebase<S> {
     /// Creates an empty collection of tables. A safe default filesystem
     /// implementation will be used to read table files.
     #[cfg(any(unix, windows))]
     pub fn new() -> Self {
-        Self::with_filesystem(Box::new(os::OsFilesystem::default()))
+        Self::with_filesystem(Box::new(os::OsFilesystem))
     }
 
     /// Creates an empty collection of tables. Memory maps will be used
@@ -236,14 +249,8 @@ impl<S: Syzygy + Position + Clone> Tablebase<S> {
 mod os {
     use super::*;
 
-    #[derive(Default)]
+    #[derive(Debug)]
     pub struct OsFilesystem;
-
-    impl OsFilesystem {
-        pub fn new() -> OsFilesystem {
-            OsFilesystem
-        }
-    }
 
     impl BlockingFilesystem for OsFilesystem {
         fn regular_file_size_blocking(&self, path: &Path) -> io::Result<u64> {
@@ -261,6 +268,7 @@ mod os {
         }
     }
 
+    #[derive(Debug)]
     struct OsRandomAccessFile {
         file: std::fs::File,
     }
@@ -292,6 +300,7 @@ mod mmap {
     use super::*;
     use memmap2::{Mmap, MmapOptions};
 
+    #[derive(Debug)]
     pub struct MmapFilesystem {
         _unsafe_priv: (),
     }
@@ -315,6 +324,24 @@ mod mmap {
             let file = std::fs::File::open(path)?;
             let mmap = unsafe { MmapOptions::new().map(&file)? };
             Ok(Box::new(MmapRandomAccessFile { mmap }))
+        }
+    }
+
+    #[derive(Debug)]
+    struct MmapRandomAccessFile {
+        mmap: Mmap,
+    }
+
+    impl BlockingRandomAccessFile for MmapRandomAccessFile {
+        async fn read_at(&self, buf: &mut [u8], offset: u64, _hint: ReadHint) -> io::Result<usize> {
+            let offset = offset as usize;
+            let end = offset + buf.len();
+            buf.copy_from_slice(
+                self.mmap
+                    .get(offset..end)
+                    .ok_or(io::ErrorKind::UnexpectedEof)?,
+            );
+            Ok(buf.len())
         }
     }
 }
