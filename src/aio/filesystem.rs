@@ -9,6 +9,14 @@ pub trait Filesystem {
     /// Type of handle to file opened for random read requests.
     type RandomAccessFile: RandomAccessFile;
 
+    /// Returns a list of files in the given directory. May filter for table
+    /// files.
+    ///
+    /// # Errors
+    ///
+    /// General I/O errors.
+    fn read_dir(&self, path: &Path) -> impl Future<Output = io::Result<Vec<PathBuf>>>;
+
     /// Checks that `path` points to a regular file and determines its size
     /// in bytes.
     ///
@@ -18,14 +26,6 @@ pub trait Filesystem {
     /// [`std::io::ErrorKind::InvalidInput`] if `path` does not
     /// ultimately point to a regular file.
     fn regular_file_size(&self, path: &Path) -> impl Future<Output = io::Result<u64>>;
-
-    /// Returns a list of files in the given directory. May filter for table
-    /// files.
-    ///
-    /// # Errors
-    ///
-    /// General I/O errors.
-    fn read_dir(&self, path: &Path) -> impl Future<Output = io::Result<Vec<PathBuf>>>;
 
     /// Opens the given file, returning a handle for random read requests.
     ///
