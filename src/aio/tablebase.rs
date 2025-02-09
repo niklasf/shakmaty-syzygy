@@ -11,8 +11,10 @@ use rustc_hash::FxHashMap;
 use shakmaty::{Move, Position, Role};
 
 use crate::{
-    aio::filesystem::Filesystem,
-    aio::table::{DtzTable, WdlTable},
+    aio::{
+        filesystem::Filesystem,
+        table::{DtzTable, WdlTable},
+    },
     errors::{ProbeResultExt as _, SyzygyError, SyzygyResult},
     material::{Material, NormalizedMaterial},
     types::{DecisiveWdl, Dtz, MaybeRounded, Metric, Syzygy, Wdl},

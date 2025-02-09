@@ -1,21 +1,19 @@
-use crate::aio;
-use crate::aio::Filesystem;
-use crate::aio::RandomAccessFile;
-use crate::aio::ReadHint;
-use crate::errors::SyzygyError;
-use crate::AmbiguousWdl;
-use crate::Dtz;
-use crate::MaybeRounded;
-use crate::Syzygy;
-use crate::Wdl;
+use std::{
+    fmt,
+    fmt::Debug,
+    io,
+    path::{Path, PathBuf},
+};
+
 use futures_util::future::FutureExt;
-use shakmaty::Move;
-use shakmaty::Position;
-use std::fmt;
-use std::fmt::Debug;
-use std::io;
-use std::path::Path;
-use std::path::PathBuf;
+use shakmaty::{Move, Position};
+
+use crate::{
+    aio,
+    aio::{Filesystem, RandomAccessFile, ReadHint},
+    errors::SyzygyError,
+    AmbiguousWdl, Dtz, MaybeRounded, Syzygy, Wdl,
+};
 
 trait BlockingFilesystem: Debug + Sync + Send {
     fn regular_file_size_blocking(&self, path: &Path) -> io::Result<u64>;
@@ -299,8 +297,9 @@ mod os {
 
 #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
 mod mmap {
-    use super::*;
     use memmap2::{Mmap, MmapOptions};
+
+    use super::*;
 
     #[derive(Debug)]
     pub(crate) struct MmapFilesystem {
