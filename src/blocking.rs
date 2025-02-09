@@ -2,7 +2,7 @@ use crate::aio;
 use crate::aio::Filesystem;
 use crate::aio::RandomAccessFile;
 use crate::aio::ReadHint;
-use crate::errors::SyzygyResult;
+use crate::errors::SyzygyError;
 use crate::AmbiguousWdl;
 use crate::Dtz;
 use crate::MaybeRounded;
@@ -47,6 +47,7 @@ impl RandomAccessFile for Box<dyn BlockingRandomAccessFile> {
     }
 }
 
+/// A collection of tables.
 pub struct Tablebase<S> {
     inner: aio::Tablebase<S, Box<dyn BlockingFilesystem>>,
 }
@@ -59,9 +60,29 @@ impl Default for Tablebase<()> {
 }
 
 impl<S> Tablebase<S> {
+    /// Creates an empty collection of tables. A safe default filesystem
+    /// implementation will be used to read table files.
     #[cfg(any(unix, windows))]
     pub fn new() -> Self {
         Self::with_filesystem(Box::new(os::OsFilesystem::default()))
+    }
+
+    /// Creates an empty collection of tables. Memory maps will be used
+    /// to read table files.
+    ///
+    /// Reading from memory maps avoids the significant syscall overhead
+    /// of the default implementation.
+    ///
+    /// # Safety
+    ///
+    /// * Externally guarantee that table files are not modified after
+    ///   they were opened.
+    /// * Externally guarantee absence of I/O errors (or live with the
+    ///   consequences). For example, I/O errors will generate
+    ///   `SIGSEV`/`SIGBUS` on Linux.
+    #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
+    pub fn with_mmap_filesystem() -> Self {
+        Self::with_filesystem(unsafe { Box::new(mmap::MmapFilesystem::new()) })
     }
 
     fn with_filesystem(filesystem: Box<dyn BlockingFilesystem>) -> Self {
@@ -70,6 +91,9 @@ impl<S> Tablebase<S> {
         }
     }
 
+    /// Returns the maximum number of pieces over all added tables.
+    ///
+    /// This number is updated when adding table files and very fast to read.
     #[inline]
     pub fn max_pieces(&self) -> usize {
         self.inner.max_pieces()
@@ -77,44 +101,130 @@ impl<S> Tablebase<S> {
 }
 
 impl<S: Syzygy> Tablebase<S> {
-    pub fn add_directory<P: AsRef<Path>>(&mut self, path: P) -> io::Result<usize> {
+    /// Add all relevant tables from a directory.
+    ///
+    /// Tables are selected by filename, e.g., `KQvKP.rtbz`.
+    ///
+    /// The files are not actually opened. This happens lazily when probing.
+    /// Eventually all files may be opened, so configure resource limits like
+    /// `RLIMIT_NOFILE` accordingly.
+    ///
+    /// Probing generally requires tables for the specific material
+    /// composition, as well as material compositions that are transitively
+    /// reachable by captures and promotions. These are sometimes distributed
+    /// separately, so make sure to add tables from all relevant directories.
+    ///
+    /// Traverses symbolic links.
+    ///
+    /// Returns the number of added table files.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error result when:
+    ///
+    /// * `path` is not pointing to a directory.
+    /// * Listing the directory fails (no permission, ...).
+    ///   See [`std::fs::read_dir()`].
+    /// * Querying meta data for a table in `path` failed.
+    ///   See [`std::fs::metadata()`].
+    ///   Some tables maybe have already been added.
+    /// * There is a table in `path` where the file size indicates that
+    ///   it must be corrupted. Some tables may have already been added.
+    pub fn add_directory(&mut self, path: impl AsRef<Path>) -> io::Result<usize> {
         self.inner
             .add_directory(path)
             .now_or_never()
             .expect("blocking impl ready immediately")
     }
 
-    pub fn add_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+    /// Add a table file.
+    ///
+    /// The file is not actually opened. This happens lazily when probing.
+    ///
+    /// Traverses symbolic links.
+    ///
+    /// # Errors
+    ///
+    /// Despite lazy opening, there are some immediate error conditions:
+    ///
+    /// * [`std::io::ErrorKind::InvalidInput`] if the filename does not indicate
+    ///   that it is a valid table file (e.g., `KQvKP.rtbz`).
+    /// * [`std::io::ErrorKind::InvalidInput`] if `path` is not pointing to a
+    ///   regular file.
+    /// * [`std::io::ErrorKind::InvalidData`] if the file size indicates that
+    ///   the table file must be corrupted.
+    /// * Querying metadata for the path fails (file does not exist,
+    ///   broken symlink, no permission to read metadata, ...).
+    ///   See [`std::fs::metadata()`].
+    pub fn add_file(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
         self.inner
-            .add_file(path)
+            .add_file(path.as_ref())
             .now_or_never()
             .expect("blocking impl ready immediately")
     }
 }
 
 impl<S: Syzygy + Position + Clone> Tablebase<S> {
-    pub fn probe_wdl_after_zeroing(&self, pos: &S) -> SyzygyResult<Wdl> {
+    /// Probe tables for the [`Wdl`] value of a position, assuming `pos`
+    /// is reached directly after a capture or pawn move.
+    ///
+    /// Requires only WDL tables.
+    ///
+    /// # Errors
+    ///
+    /// See [`SyzygyError`] for possible error conditions.
+    pub fn probe_wdl_after_zeroing(&self, pos: &S) -> Result<Wdl, SyzygyError> {
         self.inner
             .probe_wdl_after_zeroing(pos)
             .now_or_never()
             .expect("blocking impl ready immediately")
     }
 
-    pub fn probe_wdl(&self, pos: &S) -> SyzygyResult<AmbiguousWdl> {
+    /// Probe tables for the WDL value of a position, considering also
+    /// the halfmove counter of `pos`. The result may be
+    /// [ambiguous due to DTZ rounding](MaybeRounded).
+    ///
+    /// Requires both WDL and DTZ tables.
+    ///
+    /// # Errors
+    ///
+    /// See [`SyzygyError`] for possible error conditions.
+    pub fn probe_wdl(&self, pos: &S) -> Result<AmbiguousWdl, SyzygyError> {
         self.inner
             .probe_wdl(pos)
             .now_or_never()
             .expect("blocking impl ready immediately")
     }
 
-    pub fn probe_dtz(&self, pos: &S) -> SyzygyResult<MaybeRounded<Dtz>> {
+    /// Probe tables for the [`Dtz`] value of a position.
+    ///
+    /// Requires both WDL and DTZ tables.
+    ///
+    /// # Errors
+    ///
+    /// See [`SyzygyError`] for possible error conditions.
+    pub fn probe_dtz(&self, pos: &S) -> Result<MaybeRounded<Dtz>, SyzygyError> {
         self.inner
             .probe_dtz(pos)
             .now_or_never()
             .expect("blocking impl ready immediately")
     }
 
-    pub fn best_move(&self, pos: &S) -> SyzygyResult<Option<(Move, MaybeRounded<Dtz>)>> {
+    /// Get the recommended tablebase move.
+    ///
+    /// Following the tablebase mainline *starting from a capture or pawn move*
+    /// guarantees achieving the optimal outcome under the 50-move rule.
+    ///
+    /// Otherwise (i.e., when not immediately following the tablebase mainline
+    /// after the capture that crosses into tablebase territory),
+    /// [some care needs to be taken due to DTZ rounding](MaybeRounded).
+    ///
+    /// Requires both WDL and DTZ tables.
+    ///
+    /// # Errors
+    ///
+    /// See [`SyzygyError`] for possible error conditions.
+    pub fn best_move(&self, pos: &S) -> Result<Option<(Move, MaybeRounded<Dtz>)>, SyzygyError> {
         self.inner
             .best_move(pos)
             .now_or_never()
@@ -124,13 +234,15 @@ impl<S: Syzygy + Position + Clone> Tablebase<S> {
 
 #[cfg(any(unix, windows))]
 mod os {
-    use super::BlockingFilesystem;
     use super::*;
-    use std::fs;
 
     #[derive(Default)]
-    pub struct OsFilesystem {
-        advise_random: bool,
+    pub struct OsFilesystem;
+
+    impl OsFilesystem {
+        pub fn new() -> OsFilesystem {
+            OsFilesystem
+        }
     }
 
     impl BlockingFilesystem for OsFilesystem {
@@ -143,27 +255,14 @@ mod os {
         }
 
         fn open_blocking(&self, path: &Path) -> io::Result<Box<dyn BlockingRandomAccessFile>> {
-            let file = fs::File::open(path)?;
-
-            #[cfg(target_os = "linux")]
-            if self.advise_random {
-                // Safety: No requirements.
-                unsafe {
-                    libc::posix_fadvise(
-                        std::os::unix::io::AsRawFd::as_raw_fd(&file),
-                        0,
-                        0,
-                        libc::POSIX_FADV_RANDOM,
-                    );
-                }
-            }
-
-            Ok(Box::new(OsRandomAccessFile { file }))
+            Ok(Box::new(OsRandomAccessFile {
+                file: std::fs::File::open(path)?,
+            }))
         }
     }
 
     struct OsRandomAccessFile {
-        file: fs::File,
+        file: std::fs::File,
     }
 
     impl BlockingRandomAccessFile for OsRandomAccessFile {
@@ -184,6 +283,38 @@ mod os {
             _hint: ReadHint,
         ) -> io::Result<usize> {
             std::os::windows::fs::FileExt::seek_read(&self.file, buf, offset)
+        }
+    }
+}
+
+#[cfg(all(feature = "mmap", target_pointer_width = "64"))]
+mod mmap {
+    use super::*;
+    use memmap2::{Mmap, MmapOptions};
+
+    pub struct MmapFilesystem {
+        _unsafe_priv: (),
+    }
+
+    impl MmapFilesystem {
+        pub unsafe fn new() -> MmapFilesystem {
+            MmapFilesystem { _unsafe_priv: () }
+        }
+    }
+
+    impl BlockingFilesystem for MmapFilesystem {
+        fn regular_file_size_blocking(&self, path: &Path) -> io::Result<u64> {
+            regular_file_size_impl(path)
+        }
+
+        fn read_dir_blocking(&self, path: &Path) -> io::Result<Vec<PathBuf>> {
+            read_dir_impl(path)
+        }
+
+        fn open_blocking(&self, path: &Path) -> io::Result<Box<dyn BlockingRandomAccessFile>> {
+            let file = std::fs::File::open(path)?;
+            let mmap = unsafe { MmapOptions::new().map(&file)? };
+            Ok(Box::new(MmapRandomAccessFile { mmap }))
         }
     }
 }

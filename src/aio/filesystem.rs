@@ -1,5 +1,3 @@
-//! Traits to provide a custom filesystem implementation.
-
 use std::{
     fs, io,
     path::{Path, PathBuf},
@@ -7,15 +5,15 @@ use std::{
 
 /// An abstract filesystem.
 pub trait Filesystem {
+    /// Type of handle to file opened for random read requests.
     type RandomAccessFile: RandomAccessFile;
 
-    /// Determines the size in bytes of the given file.
-    ///
-    /// Follows symbolic links.
+    /// Checks that `path` points to a regular file and determines its size
+    /// in bytes.
     ///
     /// # Errors
     ///
-    /// See [`std::fs::metadata()`]. Additionally errors with
+    /// Besides general I/O errors, errors with
     /// [`std::io::ErrorKind::InvalidInput`] if `path` does not
     /// ultimately point to a regular file.
     async fn regular_file_size(&self, path: &Path) -> io::Result<u64>;

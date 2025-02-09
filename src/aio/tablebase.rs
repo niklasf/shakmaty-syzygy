@@ -32,7 +32,7 @@ enum ProbeState {
     Threat,
 }
 
-/// A collection of tables.
+/// A collection of tables, backed by a custom provider for asynchronous I/O.
 pub struct Tablebase<S, F: Filesystem> {
     filesystem: F,
     wdl: FxHashMap<NormalizedMaterial, (PathBuf, OnceCell<WdlTable<S, F::RandomAccessFile>>)>,
@@ -115,28 +115,24 @@ impl<S: Syzygy, F: Filesystem> Tablebase<S, F> {
     /// Tables are selected by filename, e.g., `KQvKP.rtbz`.
     ///
     /// The files are not actually opened. This happens lazily when probing.
-    /// Eventually all files may be opened, so configure resource limits like
-    /// `RLIMIT_NOFILE` accordingly.
+    /// Eventually all files may be opened, so, depending on the underlying
+    /// [`Filesystem`] implementation, configure resource limits accordingly.
     ///
     /// Probing generally requires tables for the specific material
     /// composition, as well as material compositions that are transitively
     /// reachable by captures and promotions. These are sometimes distributed
     /// separately, so make sure to add tables from all relevant directories.
     ///
-    /// Traverses symbolic links.
-    ///
     /// Returns the number of added table files.
     ///
     /// # Errors
     ///
-    /// Returns an error result when:
-    ///
-    /// * `path` is not pointing to a directory.
-    /// * Listing the directory fails (no permission, ...).
-    /// * Querying meta data for a table in `path` failed. Some tables
-    ///   maybe have already been added.
-    /// * There is a table in `path` where the file size indicates that
-    ///   it must be corrupted. Some tables may have already been added.
+    /// * General I/O errors forwarded from [`Filesystem::read_dir()`].
+    /// * General I/O errors forwarded from [`Filesystem::regular_file_size()`].
+    ///   Some tables may have already been added.
+    /// * [`std::io::ErrorKind::InvalidData`] if there is a table in `path`
+    ///   where the file size indicates that it must be corrupted. Some tables
+    ///   may have already been added.
     pub async fn add_directory<P: AsRef<Path>>(&mut self, path: P) -> io::Result<usize> {
         let mut num = 0;
 
@@ -159,15 +155,16 @@ impl<S: Syzygy, F: Filesystem> Tablebase<S, F> {
     ///
     /// # Errors
     ///
-    /// Returns an immediate error result when:
+    /// Despite lazy opening, there are some immediate error conditions:
     ///
-    /// * The filename does not indicate that it is a valid table file
-    ///   (e.g., `KQvKP.rtbz`).
-    /// * Querying metadata for the path fails (file does not exist,
-    ///   broken symlink, no permission to read metadata, ...).
-    /// * `path` is not pointing to a regular file.
-    /// * The file size indicates that the table file must be corrupted.
-    pub async fn add_file<P: AsRef<Path>>(&mut self, path: P) -> io::Result<()> {
+    /// * [`std::io::ErrorKind::InvalidInput`] if the filename does not indicate
+    ///   that it is a valid table file (e.g., `KQvKP.rtbz`).
+    /// * [`std::io::ErrorKind::InvalidInput`] if `path` is not pointing to a
+    ///   regular file.
+    /// * [`std::io::ErrorKind::InvalidData`] if the file size indicates that
+    ///   the table file must be corrupted.
+    /// * General I/O errors forwarded from [`Filesystem::regular_file_size()`].
+    pub async fn add_file(&mut self, path: impl AsRef<Path>) -> io::Result<()> {
         self.add_file_impl(path.as_ref()).await
     }
 
