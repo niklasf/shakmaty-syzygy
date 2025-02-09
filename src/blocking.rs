@@ -23,6 +23,7 @@ trait BlockingFilesystem: Debug + Sync + Send {
     fn open_blocking(&self, path: &Path) -> io::Result<Box<dyn BlockingRandomAccessFile>>;
 }
 
+#[doc(hidden)]
 impl Filesystem for Box<dyn BlockingFilesystem> {
     type RandomAccessFile = Box<dyn BlockingRandomAccessFile>;
 
@@ -43,6 +44,7 @@ trait BlockingRandomAccessFile: Debug + Sync + Send {
     fn read_at_blocking(&self, buf: &mut [u8], offset: u64, hint: ReadHint) -> io::Result<usize>;
 }
 
+#[doc(hidden)]
 impl RandomAccessFile for Box<dyn BlockingRandomAccessFile> {
     async fn read_at(&self, buf: &mut [u8], offset: u64, hint: ReadHint) -> io::Result<usize> {
         self.read_at_blocking(buf, offset, hint)
