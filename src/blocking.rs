@@ -94,7 +94,7 @@ impl<S> Tablebase<S> {
     ///   consequences). For example, I/O errors will generate
     ///   `SIGSEV`/`SIGBUS` on Linux.
     #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
-    pub fn with_mmap_filesystem() -> Self {
+    pub unsafe fn with_mmap_filesystem() -> Self {
         Self::with_filesystem(unsafe { Box::new(mmap::MmapFilesystem::new()) })
     }
 

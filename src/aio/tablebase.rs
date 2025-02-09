@@ -55,41 +55,7 @@ where
     }
 }
 
-/* #[cfg(any(unix, windows))]
-impl<S: Position + Clone + Syzygy> Default for Tablebase<S> {
-    fn default() -> Tablebase<S> {
-        Tablebase::new()
-    }
-} */
-
 impl<S, F: Filesystem> Tablebase<S, F> {
-    /* /// Creates an empty collection of tables. A safe default filesystem
-    /// implementation will be used to read table files.
-    #[cfg(any(unix, windows))]
-    pub fn new() -> Tablebase<S> {
-        Tablebase::with_filesystem(Arc::new(filesystem::OsFilesystem::new()))
-    }
-
-    /// Creates an empty collection of tables. Memory maps will be used
-    /// to read table files.
-    ///
-    /// Reading from memory maps avoids the significant syscall overhead
-    /// of the default implementation.
-    ///
-    /// # Safety
-    ///
-    /// * Externally guarantee that table files are not modified after
-    ///   they were opened.
-    /// * Externally guarantee absence of I/O errors (or live with the
-    ///   consequences). For example, I/O errors will generate
-    ///   `SIGSEV`/`SIGBUS` on Linux.
-    #[cfg(all(feature = "mmap", target_pointer_width = "64"))]
-    pub unsafe fn with_mmap_filesystem() -> Tablebase<S> {
-        // Safety: Forwarding contract of memmap2::MmapOptions::map()
-        // to caller.
-        Tablebase::with_filesystem(unsafe { Arc::new(filesystem::MmapFilesystem::new()) })
-    } */
-
     /// Creates an empty collection of tables. A custom filesystem
     /// implementation will be used to read table files.
     pub fn with_filesystem(filesystem: F) -> Tablebase<S, F> {
@@ -134,7 +100,7 @@ impl<S: Syzygy, F: Filesystem> Tablebase<S, F> {
     /// * [`std::io::ErrorKind::InvalidData`] if there is a table in `path`
     ///   where the file size indicates that it must be corrupted. Some tables
     ///   may have already been added.
-    pub async fn add_directory<P: AsRef<Path>>(&mut self, path: P) -> io::Result<usize> {
+    pub async fn add_directory(&mut self, path: impl AsRef<Path>) -> io::Result<usize> {
         let mut num = 0;
 
         for entry in self.filesystem.read_dir(path.as_ref()).await? {

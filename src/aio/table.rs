@@ -49,7 +49,7 @@ impl TableTag for DtzTag {
 
 bitflags! {
     /// Table layout flags.
-    #[derive(Debug)]
+    #[derive(Debug, Copy, Clone)]
     struct Layout: u8 {
         /// Two sided table for non-symmetrical material configuration.
         const SPLIT = 1;
@@ -60,7 +60,7 @@ bitflags! {
 
 bitflags! {
     /// Subtable format flags.
-    #[derive(Debug)]
+    #[derive(Debug, Copy, Clone)]
     struct Flag: u8 {
         /// DTZ table stores black to move.
         const STM = 1;
@@ -543,7 +543,7 @@ impl GroupData {
 }
 
 /// Indexes into table of remapped DTZ values.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 enum DtzMap {
     /// Normal 8-bit DTZ map.
     Normal { map_ptr: u64, by_wdl: [u16; 4] },
@@ -600,7 +600,7 @@ impl Symbol {
 }
 
 /// Description of encoding and compression.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct PairsData {
     /// Encoding flags.
     flags: Flag,
@@ -820,7 +820,7 @@ async fn read_symbols<R: RandomAccessFile>(
 }
 
 /// Descripton of encoding and compression for both sides of a table.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct FileData {
     sides: ArrayVec<PairsData, 2>,
 }

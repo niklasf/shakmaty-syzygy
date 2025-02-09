@@ -10,7 +10,6 @@
 //! use shakmaty::{CastlingMode, Chess, fen::Fen};
 //! use shakmaty_syzygy::{Tablebase, MaybeRounded, Wdl, Dtz, Syzygy};
 //!
-//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut tables = Tablebase::new();
 //! tables.add_directory("tables/chess")?;
 //!
@@ -23,8 +22,7 @@
 //!
 //! let dtz = tables.probe_dtz(&pos)?;
 //! assert!(matches!(dtz, MaybeRounded::Rounded(Dtz(-59))));
-//! #     Ok(())
-//! # }
+//! # Ok::<_, Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! # Errors
