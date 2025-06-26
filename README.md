@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> Repository merged into https://github.com/niklasf/shakmaty
+
 shakmaty-syzygy
 ===============
 
